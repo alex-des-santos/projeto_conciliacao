@@ -159,7 +159,7 @@ div[data-baseweb="select"] > div:focus-within {{
     box-shadow: 0 6px 18px rgba(228,94,110,0.12) !important;
 }}
 
-/* Force ALL text inside selectbox to be light colored - aggressive selectors */
+/* Force ALL text inside selectbox to be light colored - ULTRA aggressive selectors */
 div[data-baseweb="select"] *,
 div[data-baseweb="select"] > div[role="button"] *,
 div[data-baseweb="select"] > div > div,
@@ -173,9 +173,20 @@ div[data-baseweb="select"] li *,
 [data-baseweb="select"] *,
 section[data-testid*="stSelectbox"] *,
 section[data-testid*="stSelectbox"] div,
-section[data-testid*="stSelectbox"] span {{
+section[data-testid*="stSelectbox"] span,
+/* NOVO: Específico para os itens do dropdown */
+li[role="option"] *,
+div[role="option"] *,
+[role="option"] *,
+/* NOVO: Para texto dentro de spans e divs dentro do dropdown */
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] div,
+/* NOVO: Forçar herança de cor */
+* [data-baseweb="select"] * {{
     color: #ffffff !important;
-    font-weight: 500 !important;
+    font-weight: 600 !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
 }}
 
 /* Force the select label itself to light color */
@@ -202,6 +213,65 @@ h1, h2, h3 {{
 """
 
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+# JavaScript para forçar aplicação do CSS nos elementos do dropdown
+js_code = """
+<script>
+function forceDropdownStyles() {
+    console.log('Aplicando estilos nos dropdowns...');
+    
+    // Esperar um pouco para os elementos carregarem
+    setTimeout(function() {
+        console.log('Verificando elementos do dropdown...');
+        
+        // Encontrar todos os elementos de dropdown
+        const dropdowns = document.querySelectorAll('[data-baseweb="select"], [role="listbox"], [role="option"]');
+        console.log('Encontrados', dropdowns.length, 'dropdowns');
+        
+        dropdowns.forEach((dropdown, index) => {
+            console.log('Processando dropdown', index);
+            
+            // Forçar cor branca em todos os textos internos
+            const allTextElements = dropdown.querySelectorAll('span, div, li, p, label');
+            console.log('Encontrados', allTextElements.length, 'elementos de texto');
+            
+            allTextElements.forEach(el => {
+                el.style.color = '#ffffff';
+                el.style.fontWeight = '600';
+                el.style.opacity = '1';
+                el.style.textShadow = 'none';
+            });
+            
+            // Também aplicar diretamente no elemento
+            dropdown.style.color = '#ffffff';
+        });
+        
+        // Especificamente para itens do menu suspenso
+        const menuItems = document.querySelectorAll('[role="option"]');
+        console.log('Encontrados', menuItems.length, 'itens de menu');
+        
+        menuItems.forEach(item => {
+            item.style.color = '#ffffff';
+            item.style.backgroundColor = '#0b1220';
+            item.style.fontWeight = '600';
+        });
+        
+        console.log('Estilos aplicados com sucesso!');
+    }, 2000); // Aumentado para 2 segundos
+}
+
+// Executar quando a página carregar
+window.addEventListener('load', forceDropdownStyles);
+// Também executar quando houver mudanças no DOM
+const observer = new MutationObserver(forceDropdownStyles);
+observer.observe(document.body, { childList: true, subtree: true });
+
+// Forçar execução após 3 segundos também
+setTimeout(forceDropdownStyles, 3000);
+</script>
+"""
+
+st.markdown(js_code, unsafe_allow_html=True)
 
 @st.cache_data(show_spinner=False)
 def load_data():
@@ -365,12 +435,15 @@ def main():
         month_periods = combined.dt.to_period("M").sort_values().unique()
         month_labels = ["Todos"] + [p.strftime("%b/%Y").upper() for p in month_periods]
         month_lookup = {label: period for label, period in zip(month_labels[1:], month_periods)}
-        selected_month = cols[1].radio(
-            "Mes de referencia",
+        
+        # Transformar radio em dropdown para melhor alinhamento
+        cols[1].markdown("<label style='color: #f8fafc; font-weight:600; font-size:14px; margin-bottom:6px; display:block;'>Mes de referencia</label>", unsafe_allow_html=True)
+        selected_month = cols[1].selectbox(
+            "",
             options=month_labels,
-            horizontal=True,
             index=len(month_labels) - 1 if len(month_labels) > 1 else 0,
         )
+        
         date_range = cols[2].date_input(
             "Periodo",
             value=(min_date, max_date),
@@ -378,18 +451,17 @@ def main():
             max_value=max_date,
         )
         
-        # Add custom CSS to fix alignment issues
+        # Add custom CSS to fix alignment issues - REMOVIDO pois agora todos são dropdowns
         st.markdown("""
         <style>
-        /* Fix vertical alignment of dropdowns */
-        div[data-testid="column"]:nth-child(1) div[data-baseweb="select"] {
-            margin-top: 0px !important;
-        }
-        div[data-testid="column"]:nth-child(2) div[data-baseweb="radio"] {
+        /* Alinhamento uniforme para todos os dropdowns */
+        div[data-testid="column"] div[data-baseweb="select"],
+        div[data-testid="column"] div[data-testid="stDateInput"] {
             margin-top: 24px !important;
         }
-        div[data-testid="column"]:nth-child(3) div[data-testid="stDateInput"] {
-            margin-top: 24px !important;
+        /* Label dos dropdowns */
+        div[data-testid="column"] label {
+            margin-bottom: 6px !important;
         }
         </style>
         """, unsafe_allow_html=True)
