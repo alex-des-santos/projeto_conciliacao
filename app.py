@@ -141,9 +141,18 @@ div[data-baseweb="select"] > div,
 div[class*="st-"][class*="select"] > div {{
     background: #0b1220 !important; /* dark */
     color: #f8fafc !important; /* light text */
+    -webkit-text-fill-color: #f8fafc !important;
     border: 1px solid rgba(255,255,255,0.06) !important;
     border-radius: 8px !important;
     padding: 10px 12px !important;
+}}
+
+/* Ensure the hidden search input/visible value inherits the same color */
+div[data-baseweb="select"] input {{
+    color: #f8fafc !important;
+    caret-color: #f8fafc !important;
+    -webkit-text-fill-color: #f8fafc !important;
+    background: transparent !important;
 }}
 
 div[data-baseweb="select"] [role="listbox"],
@@ -183,6 +192,8 @@ div[data-baseweb="select"] > div > div *,
 div[data-baseweb="select"] span,
 div[data-baseweb="select"] p,
 div[data-baseweb="select"] div,
+div[data-baseweb="select"] span *,
+div[data-baseweb="select"] div *,
 div[data-baseweb="select"] label,
 div[data-baseweb="select"] [role="option"] *,
 div[data-baseweb="select"] li *,
@@ -200,6 +211,7 @@ div[data-baseweb="select"] div,
 /* NOVO: Forçar herança de cor */
 * [data-baseweb="select"] * {{
     color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
     font-weight: 600 !important;
     opacity: 1 !important;
     text-shadow: none !important;
@@ -248,11 +260,16 @@ function forceDropdownStyles() {
             console.log('Processando dropdown', index);
             
             // Forçar cor branca em todos os textos internos
-            const allTextElements = dropdown.querySelectorAll('span, div, li, p, label');
+            const allTextElements = dropdown.querySelectorAll('span, div, li, p, label, input');
             console.log('Encontrados', allTextElements.length, 'elementos de texto');
             
             allTextElements.forEach(el => {
                 el.style.color = '#ffffff';
+                el.style.webkitTextFillColor = '#ffffff';
+                if (el.tagName === 'INPUT') {
+                    el.style.caretColor = '#ffffff';
+                    el.style.backgroundColor = 'transparent';
+                }
                 el.style.fontWeight = '600';
                 el.style.opacity = '1';
                 el.style.textShadow = 'none';
