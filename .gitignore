@@ -1,0 +1,80 @@
+# .gitignore gerado para projeto Streamlit / Python
+# Ajuste conforme necessário para não ignorar arquivos que queira versionar.
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging / build artifacts
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+*.egg
+.eggs/
+
+# Logs, databases, caches
+*.log
+*.sqlite3
+*.db
+.python-version
+.cache/
+.cache
+.pytest_cache/
+.mypy_cache/
+.hypothesis/
+
+# Streamlit
+.streamlit/
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# Data / large exported assets (ajuste conforme necessário)
+# Evita versionar datasets binários/grandes gerados na pasta
+data/
+datasets/
+exported-assets*/
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.h5
+*.hdf5
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# Jupyter
+.ipynb_checkpoints
+
+# IDEs / editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node (se houver frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Misc
+*.bak
+*.tmp
+*.swp

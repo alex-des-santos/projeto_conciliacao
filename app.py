@@ -79,6 +79,21 @@ h1, h2, h3 {{
     font-size: 14px;
 }}
 
+.footnote {{
+    font-size: 12px;
+    color: #9ca3af;
+    margin-top: 12px;
+}}
+
+.filter-label {{
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: #c5c9d6;
+    margin-bottom: 6px;
+    display: block;
+}}
+
 div[data-baseweb="radio"] > div {{
     flex-wrap: wrap;
     gap: 8px;
@@ -364,10 +379,8 @@ def build_stage_chart(stage_stats: pd.DataFrame) -> go.Figure:
         ),
         legend_title_text=None
     )
-    # Ensure bar text uses dark color (some themes or layout settings may override).
+    # Ensure bar text uses dark color.
     fig.update_traces(textfont=dict(color="#0b1220", size=12), selector=dict(type="bar"))
-    # Also update scatter trace textfont if any (SLA lines usually don't have text, but safe to set)
-    fig.update_traces(textfont=dict(color="#0b1220", size=12), selector=dict(type="scatter"))
     return fig
 
 def render_metric_card(container, title: str, value: str, subtitle: str | None = None):
@@ -419,52 +432,48 @@ def main():
 
     filters_card = st.container()
     with filters_card:
-        cols = st.columns([2, 2, 2])
-        # Render a custom label for the selectbox so we can force light text color
-        cols[0].markdown("<label style='color: #f8fafc; font-weight:600; font-size:14px; margin-bottom:6px; display:block;'>Situacao</label>", unsafe_allow_html=True)
-        situation = cols[0].selectbox(
-            "",
-            [
-                "Visao geral",
-                "Conciliacoes exatas",
-                "Conciliacoes fuzzy",
-                "Nao conciliadas - TotalBank",
-                "Nao conciliadas - SAP",
-            ],
-        )
         month_periods = combined.dt.to_period("M").sort_values().unique()
         month_labels = ["Todos"] + [p.strftime("%b/%Y").upper() for p in month_periods]
         month_lookup = {label: period for label, period in zip(month_labels[1:], month_periods)}
-        
-        # Transformar radio em dropdown para melhor alinhamento
-        cols[1].markdown("<label style='color: #f8fafc; font-weight:600; font-size:14px; margin-bottom:6px; display:block;'>Mes de referencia</label>", unsafe_allow_html=True)
-        selected_month = cols[1].selectbox(
-            "",
-            options=month_labels,
-            index=len(month_labels) - 1 if len(month_labels) > 1 else 0,
-        )
-        
-        date_range = cols[2].date_input(
-            "Periodo",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date,
-        )
-        
-        # Add custom CSS to fix alignment issues - REMOVIDO pois agora todos são dropdowns
-        st.markdown("""
-        <style>
-        /* Alinhamento uniforme para todos os dropdowns */
-        div[data-testid="column"] div[data-baseweb="select"],
-        div[data-testid="column"] div[data-testid="stDateInput"] {
-            margin-top: 24px !important;
-        }
-        /* Label dos dropdowns */
-        div[data-testid="column"] label {
-            margin-bottom: 6px !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        default_month = month_labels[-1] if len(month_labels) > 1 else month_labels[0]
+        initial_month = st.session_state.get("month_filter", default_month)
+        if initial_month not in month_labels:
+            initial_month = default_month
+
+        cols = st.columns([2, 2, 2])
+        with cols[0]:
+            st.markdown("<span class='filter-label'>Situacao</span>", unsafe_allow_html=True)
+            situation = st.selectbox(
+                "Situacao",
+                [
+                    "Visao geral",
+                    "Conciliacoes exatas",
+                    "Conciliacoes fuzzy",
+                    "Nao conciliadas - TotalBank",
+                    "Nao conciliadas - SAP",
+                ],
+                label_visibility="collapsed",
+            )
+        with cols[1]:
+            st.markdown("<span class='filter-label'>Mes de referencia</span>", unsafe_allow_html=True)
+            st.selectbox(
+                "Mes de referencia",
+                options=month_labels,
+                index=month_labels.index(initial_month),
+                key="month_filter",
+                label_visibility="collapsed",
+            )
+        with cols[2]:
+            st.markdown("<span class='filter-label'>Periodo</span>", unsafe_allow_html=True)
+            date_range = st.date_input(
+                "Periodo",
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date,
+                label_visibility="collapsed",
+            )
+
+        selected_month = st.session_state.get("month_filter", initial_month)
 
     if isinstance(date_range, tuple):
         start_date, end_date = date_range
@@ -552,14 +561,6 @@ def main():
 
     with st.container():
         st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        st.subheader("Performance por categoria")
-        st.write("Tempo medio de conciliacao por descricao de transacao do TotalBank.")
-        chart = build_stage_chart(stage_stats)
-        st.plotly_chart(chart, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with st.container():
-        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
         tab_titles = [
             "Conciliacoes",
             "Pendencias TotalBank",
@@ -630,6 +631,18 @@ def main():
                 )
                 sap_table["Valor"] = sap_table["Valor"].apply(format_currency)
                 st.dataframe(sap_table, use_container_width=True, hide_index=True)
+        st.markdown(
+            "<p class='footnote'>Legenda das colunas: ID/ID SAP/ID TotalBank = identificadores; Valor = montante formatado; Data = data da transacao; Descricao = narrativa da operacao; Origem = sistema de origem; Tipo = tipo de conciliacao; Score = confianca da correspondencia.</p>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with st.container():
+        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
+        st.subheader("Performance por categoria")
+        st.write("Tempo medio de conciliacao por descricao de transacao do TotalBank.")
+        chart = build_stage_chart(stage_stats)
+        st.plotly_chart(chart, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     # Removed the instructional caption — not needed in the top-level dashboard
