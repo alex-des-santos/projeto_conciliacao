@@ -42,7 +42,7 @@ pip-wheel-metadata/
 data/
 datasets/
 exported-assets*/
-*.csv
+#*.csv
 *.tsv
 *.parquet
 *.feather

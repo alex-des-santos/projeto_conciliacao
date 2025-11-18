@@ -6,14 +6,15 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+STREAMLIT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = STREAMLIT_DIR.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
 from reconciliation_engine import ReconciliationEngine
 from config import settings
 
-DATA_DIR = ROOT_DIR / "data"
+DATA_DIR = STREAMLIT_DIR
 SLA_COLOR = "#5CC698"
 BAR_COLOR_SAFE = "#353E55"
 BAR_COLOR_ALERT = "#E45E6E"
