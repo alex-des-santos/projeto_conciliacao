@@ -1,6 +1,8 @@
+import os
 import sys
+from datetime import date, datetime
 from pathlib import Path
-from datetime import date
+from typing import Any, Dict, List
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -11,8 +13,196 @@ ROOT_DIR = STREAMLIT_DIR.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from reconciliation_engine import ReconciliationEngine
-from config import settings
+
+def _load_settings():
+    try:
+        from config import settings as loaded_settings  # type: ignore
+
+        return loaded_settings
+    except ModuleNotFoundError:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+
+        class _FallbackSettings:
+            APP_NAME: str = os.getenv("APP_NAME", "Dashboard Conciliação Bancária")
+            DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
+            TOTALBANK_API_KEY: str = os.getenv("TOTALBANK_API_KEY", "mock_key_totalbank")
+            TOTALBANK_API_URL: str = os.getenv("TOTALBANK_API_URL", "https://api.totalbank.com.br")
+            SAP_HOST: str = os.getenv("SAP_HOST", "localhost")
+            SAP_USER: str = os.getenv("SAP_USER", "demo")
+            SAP_PASSWORD: str = os.getenv("SAP_PASSWORD", "demo")
+            SAP_CLIENT: str = os.getenv("SAP_CLIENT", "800")
+            DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./conciliacao_bancaria.db")
+            AMOUNT_TOLERANCE: float = float(os.getenv("AMOUNT_TOLERANCE", "0.01"))
+            DATE_TOLERANCE_DAYS: int = int(os.getenv("DATE_TOLERANCE_DAYS", "2"))
+            FUZZY_MATCH_THRESHOLD: float = float(os.getenv("FUZZY_MATCH_THRESHOLD", "0.80"))
+            USE_MOCK_DATA: bool = os.getenv("USE_MOCK_DATA", "True").lower() == "true"
+
+        return _FallbackSettings()
+
+
+def _load_engine():
+    try:
+        from reconciliation_engine import ReconciliationEngine as Engine  # type: ignore
+
+        return Engine
+    except ModuleNotFoundError:
+        from fuzzywuzzy import fuzz
+
+        class Transaction:
+            def __init__(
+                self,
+                id: str,
+                source: str,
+                amount: float,
+                transaction_date,
+                description: str,
+                reference: str | None = None,
+                account_number: str | None = None,
+                counterparty: str | None = None,
+                status: str = "pending",
+            ):
+                self.id = id
+                self.source = source
+                self.amount = amount
+                self.transaction_date = (
+                    datetime.fromisoformat(transaction_date)
+                    if isinstance(transaction_date, str)
+                    else transaction_date
+                )
+                self.description = description
+                self.reference = reference
+                self.account_number = account_number
+                self.counterparty = counterparty
+                self.status = status
+
+        class Engine:
+            """Fallback reconciliation engine for the Streamlit-only bundle."""
+
+            def __init__(self):
+                self.amount_tolerance = settings.AMOUNT_TOLERANCE
+                self.date_tolerance = settings.DATE_TOLERANCE_DAYS
+                self.fuzzy_threshold = settings.FUZZY_MATCH_THRESHOLD
+
+            def reconcile(self, totalbank_df: pd.DataFrame, sap_df: pd.DataFrame) -> Dict[str, Any]:
+                tb_transactions = [Transaction(**row) for _, row in totalbank_df.iterrows()]
+                sap_transactions = [Transaction(**row) for _, row in sap_df.iterrows()]
+
+                matched_pairs: List[Dict[str, Any]] = []
+                unmatched_totalbank = tb_transactions.copy()
+                unmatched_sap = sap_transactions.copy()
+
+                for tb_tx in tb_transactions:
+                    for sap_tx in unmatched_sap[:]:
+                        if self._is_exact_match(tb_tx, sap_tx):
+                            matched_pairs.append(
+                                {
+                                    "totalbank_id": tb_tx.id,
+                                    "sap_id": sap_tx.id,
+                                    "totalbank_amount": tb_tx.amount,
+                                    "sap_amount": sap_tx.amount,
+                                    "totalbank_date": tb_tx.transaction_date,
+                                    "sap_date": sap_tx.transaction_date,
+                                    "totalbank_description": tb_tx.description,
+                                    "sap_description": sap_tx.description,
+                                    "match_type": "exact",
+                                    "match_score": 100.0,
+                                    "status": "matched",
+                                }
+                            )
+                            unmatched_totalbank.remove(tb_tx)
+                            unmatched_sap.remove(sap_tx)
+                            break
+
+                for tb_tx in unmatched_totalbank[:]:
+                    best_match = None
+                    best_score = 0.0
+                    best_sap_tx = None
+                    for sap_tx in unmatched_sap:
+                        score = self._fuzzy_match_score(tb_tx, sap_tx)
+                        if score > best_score:
+                            best_score = score
+                            best_match = sap_tx
+                            best_sap_tx = sap_tx
+
+                    if best_score >= self.fuzzy_threshold and best_match:
+                        matched_pairs.append(
+                            {
+                                "totalbank_id": tb_tx.id,
+                                "sap_id": best_sap_tx.id,
+                                "totalbank_amount": tb_tx.amount,
+                                "sap_amount": best_sap_tx.amount,
+                                "totalbank_date": tb_tx.transaction_date,
+                                "sap_date": best_sap_tx.transaction_date,
+                                "totalbank_description": tb_tx.description,
+                                "sap_description": best_sap_tx.description,
+                                "match_type": "fuzzy",
+                                "match_score": round(best_score, 2),
+                                "status": "matched_fuzzy",
+                            }
+                        )
+                        unmatched_totalbank.remove(tb_tx)
+                        unmatched_sap.remove(best_sap_tx)
+
+                total_tb_amount = sum(tx.amount for tx in tb_transactions)
+                total_sap_amount = sum(tx.amount for tx in sap_transactions)
+                total_matched_amount = sum(p["totalbank_amount"] for p in matched_pairs)
+
+                summary = {
+                    "total_totalbank_transactions": len(tb_transactions),
+                    "total_sap_transactions": len(sap_transactions),
+                    "total_matched": len(matched_pairs),
+                    "total_unmatched_totalbank": len(unmatched_totalbank),
+                    "total_unmatched_sap": len(unmatched_sap),
+                    "total_totalbank_amount": round(total_tb_amount, 2),
+                    "total_sap_amount": round(total_sap_amount, 2),
+                    "total_matched_amount": round(total_matched_amount, 2),
+                    "unmatched_totalbank_amount": round(sum(tx.amount for tx in unmatched_totalbank), 2),
+                    "unmatched_sap_amount": round(sum(tx.amount for tx in unmatched_sap), 2),
+                    "reconciliation_rate": round(
+                        (len(matched_pairs) / max(len(tb_transactions), len(sap_transactions), 1)) * 100, 2
+                    ),
+                }
+
+                return {
+                    "matched": matched_pairs,
+                    "unmatched_totalbank": unmatched_totalbank,
+                    "unmatched_sap": unmatched_sap,
+                    "summary": summary,
+                }
+
+            def _is_exact_match(self, tb_tx: Transaction, sap_tx: Transaction) -> bool:
+                amount_diff = abs(tb_tx.amount - sap_tx.amount)
+                if amount_diff > self.amount_tolerance:
+                    return False
+
+                date_diff = abs((tb_tx.transaction_date - sap_tx.transaction_date).days)
+                if date_diff > self.date_tolerance:
+                    return False
+
+                return True
+
+            def _fuzzy_match_score(self, tb_tx: Transaction, sap_tx: Transaction) -> float:
+                amount_diff = abs(tb_tx.amount - sap_tx.amount)
+                max_amount = max(tb_tx.amount, sap_tx.amount, 1)
+                amount_score = max(0, 1 - (amount_diff / max_amount)) * 100
+
+                date_diff = abs((tb_tx.transaction_date - sap_tx.transaction_date).days)
+                date_score = max(0, 1 - (date_diff / 30)) * 100
+
+                if tb_tx.description and sap_tx.description:
+                    desc_score = fuzz.ratio(tb_tx.description.lower(), sap_tx.description.lower())
+                else:
+                    desc_score = 50
+
+                return amount_score * 0.40 + date_score * 0.30 + desc_score * 0.30
+
+        return Engine
+
+
+settings = _load_settings()
+ReconciliationEngine = _load_engine()
 
 DATA_DIR = STREAMLIT_DIR
 SLA_COLOR = "#5CC698"
